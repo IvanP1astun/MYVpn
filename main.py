@@ -1,37 +1,42 @@
-import os
 import requests
 
-def enable_vpn(proxy_host='186.137.21.165', proxy_port=6881):
-    """Включение HTTP/HTTPS прокси через переменные окружения"""
-    # Для HTTP прокси используется http://, а не socks5
-    os.environ['HTTP_PROXY'] = f'http://{proxy_host}:{proxy_port}'
-    os.environ['HTTPS_PROXY'] = f'http://{proxy_host}:{proxy_port}'
-    print(f"✅ VPN включен (HTTP прокси {proxy_host}:{proxy_port})")
+class SimpleProxyManager:
+    def __init__(self, host, port, proto='http'):
+        self.proxy_url = f"{proto}://{host}:{port}"
+        self.proxies = {
+            "http": self.proxy_url,
+            "https": self.proxy_url
+        }
+        self.session = requests.Session()
 
-def disable_vpn():
-    os.environ.pop('HTTP_PROXY', None)
-    os.environ.pop('HTTPS_PROXY', None)
-    print("✅ VPN отключен")
+    def get_current_ip(self):
+        try:
+            # Сначала пробуем БЕЗ прокси
+            r = requests.get('https://api.ipify.org?format=json', timeout=5)
+            return r.json()['ip']
+        except Exception as e:
+            return f"Ошибка: {e}"
 
-def run_request():
-    try:
-        response = requests.get('https://httpbin.org/ip', timeout=60)
-        print(f"IP: {response.json()['origin']}")
-        return response.json()['origin']
-    except Exception as e:
-        print(f"Ошибка: {e}")
-        return None
+    def get_ip_with_proxy(self):
+        try:
+            # Используем сессию с прокси
+            r = self.session.get('https://api.ipify.org?format=json', 
+                                 proxies=self.proxies, timeout=10)
+            return r.json()['ip']
+        except Exception as e:
+            return f"Ошибка прокси: {e}"
 
+# --- ТЕСТ ---
+proxy = SimpleProxyManager('203.189.154.20', '1080')
 
-print("Без VPN:")
-ip1 = run_request()
+print(f"[*] Реальный IP: {proxy.get_current_ip()}")
+print(f"[*] IP через прокси: {proxy.get_ip_with_proxy()}")
 
-print("\nВключаем VPN...")
-enable_vpn()
-print("С VPN:")
-ip2 = run_request()
+# Проверка на успех
+real = proxy.get_current_ip()
+fake = proxy.get_ip_with_proxy()
 
-print("\nВыключаем VPN...")
-disable_vpn()
-print("После отключения:")
-ip3 = run_request()
+if real != fake and "Ошибка" not in fake:
+    print("\n✅ Успешно! Прокси подменил ваш IP на:", fake)
+else:
+    print("\n❌ Не удалось подменить IP. Проверьте адрес прокси.")
